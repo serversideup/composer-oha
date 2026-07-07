@@ -1,0 +1,40 @@
+# Guard workflow: re-verifies the vendored binaries whenever a release is
+# published. Publishing to Composer itself needs no workflow — Packagist
+# watches this repository via webhook and picks up new tags automatically.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release binaries (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Verify committed binaries against upstream digests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ./download-oha-release.sh --verify-only
+
+      - name: Launcher runs and reports the pinned version
+        run: |
+          set -euo pipefail
+          pinned=$(grep -E '^OHA_VERSION=' download-oha-release.sh | cut -d'"' -f2)
+          reported=$(./bin/oha --version | awk '{print $2}')
+          echo "pinned=${pinned} reported=${reported}"
+          test "$pinned" = "$reported"

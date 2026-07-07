@@ -1,0 +1,20 @@
+{
+  "name": "serversideup/oha",
+  "description": "Distribute oha (HTTP load generator) as a Composer package.",
+  "bin": [
+      "bin/oha"
+    ],
+  "authors": [
+      {
+          "name": "Dan Pastori",
+          "homepage": "https://x.com/danpastori"
+      },
+      {
+          "name": "Jay Rogers",
+          "homepage": "https://x.com/jaydrogers"
+      }
+  ],
+  "type": "library",
+  "license": "MIT",
+  "require": {}
+}

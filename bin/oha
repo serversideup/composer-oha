@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(cd -P "$(dirname "$0")" && pwd -P)
+OHA_ARCH=""
+OHA_OS=""
+
+arch() {
+    uname -m
+}
+
+os() {
+    uname
+}
+
+if [ "$(os)" = "Linux" ]; then
+    OHA_OS="unknown-linux-musl"
+    OHA_ARCH="$(arch)"
+elif [ "$(os)" = "Darwin" ]; then
+    OHA_OS="apple-darwin"
+    if [ "$(arch)" = "arm64" ]; then
+        OHA_ARCH="aarch64"
+    else
+        echo "Unsupported OS and architecture: $(os) $(arch)" >&2
+        exit 1
+    fi
+else
+    echo "Unsupported operating system: $(os)" >&2
+    exit 1
+fi
+
+exec "$SCRIPT_DIR/oha_${OHA_ARCH}-${OHA_OS}" "$@"
