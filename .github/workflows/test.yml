@@ -22,7 +22,7 @@ jobs:
           - macos-15          # aarch64 macOS
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate composer.json
         if: matrix.os == 'ubuntu-24.04'
