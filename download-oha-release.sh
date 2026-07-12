@@ -4,7 +4,7 @@ SCRIPT_DIR=$(dirname $(readlink -f $0))
 
 # Single source of truth for the vendored upstream version. The sync-oha.sh
 # script bumps this pin; CI verifies the committed binaries against it.
-OHA_VERSION="1.14.0"
+OHA_VERSION="1.15.0"
 
 DEST_DIR="${SCRIPT_DIR}/bin"
 
