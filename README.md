@@ -45,8 +45,9 @@ Notes:
 
 ### Versioning & releases
 
-- **Upstream pin**: the single source of truth is `OHA_VERSION` in `download-oha-release.sh`. A scheduled GitHub Action (`sync-oha.yml`) checks [hatoo/oha](https://github.com/hatoo/oha/releases) daily and opens an auto-merging PR that bumps the pin and re-vendors the binaries when upstream publishes a new release.
-- **Package releases**: tagged with CalVer (e.g. `v2026.07.07`). Publishing a GitHub release is all that's needed — Packagist watches this repository and picks up new tags automatically. The `release.yml` workflow re-verifies the vendored binaries on every release.
+- **Upstream pin**: the single source of truth is `OHA_VERSION` in `download-oha-release.sh`.
+- **Automated sync**: a scheduled GitHub Action (`sync-oha.yml`) checks [hatoo/oha](https://github.com/hatoo/oha/releases) daily. When upstream publishes a new release, it bumps the pin, re-vendors the binaries (sha256-verified against the upstream release asset digests), smoke-tests the binary, commits directly to `main`, and publishes a CalVer release — fully hands-off.
+- **Package releases**: tagged with CalVer (e.g. `v2026.07.07`; same-day repeats get a `.1`, `.2`, … suffix). Packagist watches this repository and picks up new tags automatically. Manually published releases are re-verified by the `release.yml` workflow; automated releases are verified inline by `sync-oha.yml` before tagging.
 - **Development version**: every push to `main` is tested (binaries executed on x86_64 Linux, ARM64 Linux, and macOS ARM runners, checksums verified against upstream). Install the latest development state with:
 
 ```bash
@@ -55,7 +56,7 @@ composer require serversideup/oha:dev-main
 
 ### Binary verification
 
-Every vendored binary is verified against the sha256 digest that GitHub reports for the corresponding upstream release asset — at download time, on every push/PR, and again when a release is published. You can re-verify a checkout at any time:
+Every vendored binary is verified against the sha256 digest that GitHub reports for the corresponding upstream release asset — at download time, on every push/PR, and before every release is tagged. Verification fails closed: if the upstream digests cannot be fetched, the scripts refuse to continue rather than skip the check. You can re-verify a checkout at any time:
 
 ```bash
 ./download-oha-release.sh --verify-only

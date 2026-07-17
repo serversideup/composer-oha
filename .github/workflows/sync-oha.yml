@@ -1,3 +1,15 @@
+# Keeps the vendored binaries in sync with upstream hatoo/oha.
+#
+# When upstream publishes a new release: bump the pin in
+# download-oha-release.sh, re-download the binaries (sha256-verified against
+# the upstream release asset digests), smoke-test the binary, commit straight
+# to main, and publish a CalVer release. Packagist watches this repository and
+# picks the new tag up automatically — no human in the loop.
+#
+# Note: pushes and releases made with the built-in GITHUB_TOKEN intentionally
+# do not trigger other workflows (GitHub's anti-recursion rule), so test.yml
+# and release.yml will not fire on these commits. That is fine — this workflow
+# performs the same verification inline before anything is committed or tagged.
 name: Sync upstream oha release
 
 on:
@@ -7,7 +19,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 concurrency:
   group: sync-oha
@@ -20,45 +31,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Create update branch
-        id: branch
-        run: |
-          ts=$(date -u +"%Y%m%d-%H%M%S")
-          branch="chore/sync-oha-${ts}"
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
-          git checkout -b "$branch"
 
       - name: Run sync script
-        id: syncscript
+        id: sync
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          chmod +x ./sync-oha.sh ./download-oha-release.sh
-          set +e
-          ./sync-oha.sh | tee /tmp/sync-oha.out
-          rc=$?
-          set -e
-          if [[ "$rc" -ne 0 ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "Sync script failed" >&2
-            exit 1
-          fi
-          if grep -qE '^changed=true$' /tmp/sync-oha.out; then
+          set -euo pipefail
+          out=$(./sync-oha.sh)
+          echo "$out"
+          if grep -qxF 'changed=true' <<< "$out"; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify updated binaries run on this runner
-        if: steps.syncscript.outputs.changed == 'true'
+      - name: Verify the updated binary runs and reports the pinned version
+        if: steps.sync.outputs.changed == 'true'
         run: |
           set -euo pipefail
           pinned=$(grep -E '^OHA_VERSION=' download-oha-release.sh | cut -d'"' -f2)
@@ -66,84 +55,36 @@ jobs:
           echo "pinned=${pinned} reported=${reported}"
           test "$pinned" = "$reported"
 
-      - name: Commit changes
-        if: steps.syncscript.outputs.changed == 'true'
+      - name: Commit and push to main
+        if: steps.sync.outputs.changed == 'true'
         run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           version=$(grep -E '^OHA_VERSION=' download-oha-release.sh | cut -d'"' -f2)
           git add download-oha-release.sh bin/
           git commit -m "chore: sync oha binaries to upstream v${version}"
+          git push origin HEAD:main
 
-      - name: Push branch
-        if: steps.syncscript.outputs.changed == 'true'
-        run: |
-          git push --set-upstream origin "${{ steps.branch.outputs.branch }}"
-
-      - name: Create PR (gh)
-        if: steps.syncscript.outputs.changed == 'true'
-        id: cpr
+      - name: Publish CalVer release
+        if: steps.sync.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version=$(grep -E '^OHA_VERSION=' download-oha-release.sh | cut -d'"' -f2)
-          suggested_tag="v$(date -u +%Y.%m.%d)"
-          title="chore: sync oha binaries to upstream v${version}"
-          body=$(cat << EOF
-          Automated sync of the vendored \`oha\` binaries from upstream [hatoo/oha](https://github.com/hatoo/oha/releases/tag/v${version}).
-
-          - Upstream version: **v${version}**
-          - All binaries verified against the upstream release asset sha256 digests
-          - Triggered by: ${{ github.event_name }}
-
-          After merging, publish by creating a release with a CalVer tag (suggested: \`${suggested_tag}\`) — Packagist picks it up automatically.
-          EOF
-          )
-          pr_number=$(gh pr view --head "${{ steps.branch.outputs.branch }}" --json number --jq .number 2>/dev/null || true)
-          if [[ -z "$pr_number" ]]; then
-            gh pr create \
-              --title "$title" \
-              --body "$body" \
-              --head "${{ steps.branch.outputs.branch }}"
-            pr_number=$(gh pr view --head "${{ steps.branch.outputs.branch }}" --json number --jq .number)
-            gh pr edit "$pr_number" --add-label chore --add-label dependencies || true
-          fi
-          echo "pull-request-number=$pr_number" >> "$GITHUB_OUTPUT"
-
-      - name: Validate PR is safe to automerge (gh)
-        if: steps.syncscript.outputs.changed == 'true' && steps.cpr.outputs.pull-request-number != ''
-        id: guard
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          pr="${{ steps.cpr.outputs.pull-request-number }}"
-          if [[ -z "$pr" ]]; then
-            echo "allow=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          owner="${GITHUB_REPOSITORY%%/*}"
-          author=$(gh pr view "$pr" --json author --jq .author.login)
-          head_ref=$(gh pr view "$pr" --json headRefName --jq .headRefName)
-          head_owner=$(gh pr view "$pr" --json headRepositoryOwner --jq .headRepositoryOwner.login)
-          files=$(gh pr diff "$pr" --name-only)
-          only_expected=true
-          while IFS= read -r f; do
-            [[ "$f" == bin/* || "$f" == "download-oha-release.sh" ]] || { only_expected=false; break; }
-          done <<< "$files"
-          if [[ "$author" == "github-actions[bot]" && "$head_owner" == "$owner" && "$head_ref" == chore/sync-oha-* && "$only_expected" == true ]]; then
-            echo "allow=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "allow=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Enable auto-merge (safe PR only, gh)
-        if: steps.guard.outputs.allow == 'true'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr merge "${{ steps.cpr.outputs.pull-request-number }}" --squash --auto
+          base="v$(date -u +%Y.%m.%d)"
+          tag="$base"
+          n=0
+          while [[ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ]]; do
+            n=$((n + 1))
+            tag="${base}.${n}"
+          done
+          gh release create "$tag" \
+            --target "$(git rev-parse HEAD)" \
+            --title "$tag" \
+            --notes "Sync vendored \`oha\` binaries to upstream [hatoo/oha v${version}](https://github.com/hatoo/oha/releases/tag/v${version}). All binaries verified against the upstream release asset sha256 digests, and smoke-tested on the runner before tagging."
 
       - name: No changes
-        if: steps.syncscript.outputs.changed != 'true'
+        if: steps.sync.outputs.changed != 'true'
         run: echo "Pinned oha version matches the latest upstream release; nothing to sync."

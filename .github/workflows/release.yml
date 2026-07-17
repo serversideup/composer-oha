@@ -1,6 +1,9 @@
 # Guard workflow: re-verifies the vendored binaries whenever a release is
-# published. Publishing to Composer itself needs no workflow — Packagist
-# watches this repository via webhook and picks up new tags automatically.
+# published MANUALLY. Automated releases from sync-oha.yml are created with
+# the built-in GITHUB_TOKEN and therefore never trigger this workflow
+# (GitHub's anti-recursion rule) — they are verified inline before tagging.
+# Publishing to Composer itself needs no workflow — Packagist watches this
+# repository via webhook and picks up new tags automatically.
 name: Release
 
 on:

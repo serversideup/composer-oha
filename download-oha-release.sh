@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-SCRIPT_DIR=$(dirname $(readlink -f $0))
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
 # Single source of truth for the vendored upstream version. The sync-oha.sh
 # script bumps this pin; CI verifies the committed binaries against it.
@@ -59,6 +59,14 @@ for asset in release.get("assets", []):
 
 DIGESTS=$(fetch_digests || true)
 
+# Fail closed: without upstream digests the binaries cannot be verified, so
+# neither downloading nor verification may report success.
+if [[ -z "$DIGESTS" ]]; then
+    echo "ERROR: could not fetch sha256 digests for oha v${OHA_VERSION} from the GitHub API." >&2
+    echo "Refusing to continue — binaries cannot be verified without them." >&2
+    exit 1
+fi
+
 digest_for() {
     local asset="$1"
     echo "$DIGESTS" | awk -v name="$asset" '$1 == name {print $2}'
@@ -85,7 +93,8 @@ for entry in "${OHA_ASSETS[@]}"; do
 
     expected=$(digest_for "$asset")
     if [[ -z "$expected" ]]; then
-        echo "SKIP     ${asset} (no upstream digest available — could not query the GitHub API)" >&2
+        echo "MISSING DIGEST ${asset}: upstream release publishes no sha256 digest for this asset" >&2
+        FAILED=1
         continue
     fi
 

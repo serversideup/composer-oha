@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-SCRIPT_DIR=$(dirname $(readlink -f $0))
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 
 # Checks upstream hatoo/oha for a newer release than the version pinned in
 # download-oha-release.sh. When one exists, bumps the pin and re-vendors the
